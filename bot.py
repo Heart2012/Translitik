@@ -1,17 +1,17 @@
 import logging
 import re
-from aiogram import Bot, Dispatcher, executor, types
 import os
+from aiogram import Bot, Dispatcher, executor, types
 
-# 🔐 Токен з BotFather
+# 🔐 Токен із Render → Environment (BOT_TOKEN)
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Ініціалізація
 logging.basicConfig(level=logging.INFO)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# 🔤 Транслітерація (спрощена, як у Telegram username)
+# 🗺️ Мапа транслітерації
 translit_map = {
     'а':'a','б':'b','в':'v','г':'h','ґ':'g','д':'d','е':'e','є':'ie','ж':'zh',
     'з':'z','и':'y','і':'i','ї':'i','й':'i','к':'k','л':'l','м':'m','н':'n',
@@ -27,19 +27,22 @@ def transliterate(text):
     result = ""
     for char in text:
         result += translit_map.get(char, char)
-    result = re.sub(r'[^a-zA-Z0-9]+', '_', result)  # заміна пробілів і знаків
-    result = re.sub(r'_+', '_', result).strip('_')   # очищення зайвих "_"
+    result = re.sub(r'[^a-zA-Z0-9]+', '_', result)
+    result = re.sub(r'_+', '_', result).strip('_')
     return result.lower()
 
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
-    await msg.answer("👋 Привіт! Надішли мені слово або фразу українською — я зроблю транслітерацію, як у пошуку Telegram.\n\nНаприклад:\nновини → noviny\nкиївські новини → kyivski_novyny")
+    await msg.answer("👋 Привіт! Надішли слово українською — я зроблю транслітерацію як у пошуку Telegram.\n\nНаприклад:\nновини → noviny\nкиївські новини → kyivski_novyny")
 
 @dp.message_handler()
-async def translit_message(msg: types.Message):
+async def handle_message(msg: types.Message):
     text = msg.text.strip()
+    if not text:
+        await msg.answer("🤔 Введи текст для транслітерації.")
+        return
     result = transliterate(text)
-    await msg.answer(result or "🤔 Не вдалося транслітерувати текст.")
+    await msg.answer(result or "Не вдалося транслітерувати текст 😅")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
