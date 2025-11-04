@@ -1,17 +1,22 @@
 import logging
-import re
 import os
-from aiogram import Bot, Dispatcher, executor, types
+import re
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils.executor import start_webhook
+from aiohttp import web
 
-# 🔐 Токен із Render → Environment (BOT_TOKEN)
-TOKEN = os.getenv("BOT_TOKEN")
+# 🔐 Токен і URL з Render → Environment
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_HOST = "0.0.0.0"
+WEBAPP_PORT = int(os.getenv("PORT", 10000))
+APP_URL = os.getenv("RENDER_EXTERNAL_URL")  # Автоматично задається Render
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# 🗺️ Мапа транслітерації
+# 🗺️ Транслітерація
 translit_map = {
     'а':'a','б':'b','в':'v','г':'h','ґ':'g','д':'d','е':'e','є':'ie','ж':'zh',
     'з':'z','и':'y','і':'i','ї':'i','й':'i','к':'k','л':'l','м':'m','н':'n',
@@ -24,9 +29,7 @@ translit_map = {
 }
 
 def transliterate(text):
-    result = ""
-    for char in text:
-        result += translit_map.get(char, char)
+    result = "".join(translit_map.get(ch, ch) for ch in text)
     result = re.sub(r'[^a-zA-Z0-9]+', '_', result)
     result = re.sub(r'_+', '_', result).strip('_')
     return result.lower()
@@ -36,13 +39,32 @@ async def start(msg: types.Message):
     await msg.answer("👋 Привіт! Надішли слово українською — я зроблю транслітерацію як у пошуку Telegram.\n\nНаприклад:\nновини → noviny\nкиївські новини → kyivski_novyny")
 
 @dp.message_handler()
-async def handle_message(msg: types.Message):
+async def translit_message(msg: types.Message):
     text = msg.text.strip()
     if not text:
         await msg.answer("🤔 Введи текст для транслітерації.")
         return
-    result = transliterate(text)
-    await msg.answer(result or "Не вдалося транслітерувати текст 😅")
+    await msg.answer(transliterate(text))
+
+async def on_startup(dp):
+    webhook_url = f"{APP_URL}/webhook/{BOT_TOKEN}"
+    await bot.set_webhook(webhook_url)
+    logging.info(f"Webhook set to {webhook_url}")
+
+async def on_shutdown(dp):
+    logging.warning('Shutting down...')
+    await bot.delete_webhook()
+    await dp.storage.close()
+    await dp.storage.wait_closed()
+    logging.warning('Bye!')
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    start_webhook(
+        dispatcher=dp,
+        webhook_path=f"/webhook/{BOT_TOKEN}",
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        skip_updates=True,
+        host=WEBAPP_HOST,
+        port=WEBAPP_PORT,
+    )
